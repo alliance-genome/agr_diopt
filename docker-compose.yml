@@ -1,12 +1,10 @@
 version: "3.2"
 
-services:
-  database:
-    image: postgres:13
-    environment:
-      - POSTGRES_DB=diopt
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+agr_postgres_existing:
+
+agr_postgres_new:
+  image: postgres:13
+
 
 #  agr_diopt:
 #    image: agrdocker/agr_loader_run:latest

@@ -15,8 +15,6 @@ def parse_ddl_contents(ddl_file_location):
             if 'CREATE TABLE' in ddl:
                 # The following section could / should be updated with some cool regex.
                 # Using splits and strips works fine, but it's less efficient and less readable.
-                # However, working with recursive parenthesis in regex is a big pain...
-                # TODO Update the following few lines with regex.
                 split_string = ddl.split('CREATE TABLE ')[1]  # Extract the CREATE TABLE commands.
                 string_lines = split_string.split('\n')  # Break them into a list separated by \n.
                 table_title = string_lines[0].split(' ')[0]  # Extract the table title from the first item in the list.
@@ -39,48 +37,54 @@ def process_tsv_files(ddl_contents, input_dir, output_dir):
     for filename in ddl_contents:
         file_location = input_dir + '/' + filename + '.tsv'
         output_file = output_dir + '/' + 'fixed_' + filename + '.csv'
-        with open(file_location) as tsv_file, open(output_file, 'w') as output_csv:
-            print("Reading from file %s and writing to file %s" % (file_location, output_file))
-            tsvin = csv.reader(tsv_file, delimiter='\t')
-            csvout = csv.writer(output_csv)
-            headers = next(tsvin)  # Extract the headers from the TSV file and move the loop one step forward.
-            headers_to_print = [str(x.strip('"')) for x in headers]
-            csvout.writerow(headers_to_print)
-            row_count = 1
-            for row in tsvin:
-                row_count += 1
-                row_print_array = []
-                for idx, item in enumerate(row):  # Loop with both the array item itself and the index number (idx) of the item.
-                    # Lookup the item type and whether it can be NULL from our ddl_contents dictionary.
-                    # This will fail (which is desirable) if the DDL is missing a column header from a TSV.
-                    # We're also looping through the headers array using the index number of the row via "enumerate".
-                    # This is a cool trick which allows us to step through the header as we step through the row items.
-                    # The goal is to include the name of the "column" alongside the row item itself.
-                    try:
-                        (item_type, can_be_null) = ddl_contents[filename][headers[idx].lower()]
-                    except KeyError:
-                        print("ERROR: The column %s from %s.tsv is missing from the DDL. Please fix before proceeding." % (headers[idx], filename))
-                        sys.exit(-1)
-                    # Fix the undesired NULL characters and replace it with an actual NULL.
-                    if item == '-':
-                        item_orig = item
-                        item = ''
-                        replacement_message = 'Replaced \"%s\" with %s in %s:%s.' % (item_orig, item, filename, headers[idx])
-                        if replacement_message not in set_of_print_statements:  # Store the messages and print them only once.
-                            print(replacement_message)
-                            set_of_print_statements.add(replacement_message)
-                        if can_be_null is False:
-                            warning_message = 'ERROR: DDL specifies %s:%s should not be NULL, but NULL value found.' % (filename, headers[idx])
-                            if warning_message not in set_of_print_statements:
-                                print(warning_message)
-                                set_of_print_statements.add(warning_message)
+        try:
+            with open(file_location) as tsv_file, open(output_file, 'w') as output_csv:
+                print("Reading from file %s and writing to file %s" % (file_location, output_file))
+                tsvin = csv.reader(tsv_file, delimiter='\t')
+                csvout = csv.writer(output_csv)
+                headers = next(tsvin)  # Extract the headers from the TSV file and move the loop one step forward.
+                headers_to_print = [str(x.strip('"')) for x in headers]
+                csvout.writerow(headers_to_print)
+                row_count = 1
+                for row in tsvin:
+                    row_count += 1
+                    row_print_array = []
+                    for idx, item in enumerate(row):  
+                        # Loop with both the array item itself and the index number (idx) of the item.
+                        # Lookup the item type and whether it can be NULL from our ddl_contents dictionary.
+                        # This will fail (which is desirable) if the DDL is missing a column header from a TSV.
+                        # We're also looping through the headers array using the index number of the row via "enumerate".
+                        # This is a cool trick which allows us to step through the header as we step through the row items.
+                        # The goal is to include the name of the "column" alongside the row item itself.
+                        try:
+                            (item_type, can_be_null) = ddl_contents[filename][headers[idx].lower()]
+                        except KeyError:
+                            print("ERROR: The column %s from %s.tsv is missing from the DDL. Please fix before proceeding." % (headers[idx], filename))
+                            sys.exit(-1)
+                        # Fix the undesired NULL characters and replace it with an actual NULL.
+                        if item == '-':
+                            item_orig = item
+                            item = ''
+                            replacement_message = 'Replaced \"%s\" with %s in %s:%s.' % (item_orig, item, filename, headers[idx])
+                            if replacement_message not in set_of_print_statements:  # Store the messages and print them only once.
+                                print(replacement_message)
+                                set_of_print_statements.add(replacement_message)
+                            if can_be_null is False:
+                                warning_message = 'ERROR: DDL specifies %s:%s should not be NULL, but NULL value found.' % (filename, headers[idx])
+                                if warning_message not in set_of_print_statements:
+                                    print(warning_message)
+                                    set_of_print_statements.add(warning_message)
 
-                    # Append values to our row list.
-                    row_print_array.append(item)
+                        # Append values to our row list.
+                        row_print_array.append(item)
 
-                # Construct output statements.
-                csvout.writerow(row_print_array)
-                del row_print_array[:]  # Dump the array to save memory.
+                    # Construct output statements.
+                    csvout.writerow(row_print_array)
+                    del row_print_array[:]  # Dump the array to save memory.
+
+        except FileNotFoundError:
+            print("ERROR: File %s not found." % file_location)
+            row_count = 0
 
         # Print row counts.
         print('Processed %s rows in %s.tsv (including headers).' % (row_count, filename))
