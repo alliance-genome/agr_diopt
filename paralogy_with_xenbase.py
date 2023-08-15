@@ -1,14 +1,43 @@
 #!/usr/bin/env python
+import psycopg2
 import strict_rfc3339
 import os
 import pickle
 import datetime
 import json
+import csv
 from nested_dict import nested_dict
+import configparser
 import argparse
 import coloredlogs
 import logging
-from shared_func import obtain_connection, obtain_data_from_database, obtain_data_from_database_query_variable
+
+def obtain_connection(dbhost, database, username, password):
+    # Define our connection.
+    conn_string = "host=%s dbname=%s user=%s password='%s'" % (dbhost, database, username, password)
+    # Attempt to get a connection
+    conn = psycopg2.connect(conn_string)
+    return conn
+
+def obtain_data_from_database(connection, query):
+    cursor = connection.cursor('my_cursor')
+    # Execute the query.
+    cursor.execute(query)
+    # Grab the results.
+    database_data = cursor.fetchall()
+    # Close the cursor.
+    cursor.close()
+    return database_data
+
+def obtain_data_from_database_query_variable(connection, query, query_variable):
+    cursor = connection.cursor('my_cursor')
+    # Execute the query.
+    cursor.execute(query, query_variable)
+    # Grab the results.
+    database_data = cursor.fetchall()
+    # Close the cursor.
+    cursor.close()
+    return database_data
 
 def fix_identifier(logger, identifier, speciesid):
     if speciesid == 7955:  # ZFIN
@@ -32,6 +61,9 @@ def fix_identifier(logger, identifier, speciesid):
     elif speciesid == 9606:  # HGNC
         identifier_output = 'DRSC:HGNC:' + identifier
         return identifier_output
+    elif speciesid == 8364:  # Xenbase
+        identifier_output = 'DRSC:Xenbase:' + identifier
+        return identifier_output
     else:
         logger.critical("Fatal error: cannot correct species specific gene id %s" % (identifier))
         quit()
@@ -51,6 +83,8 @@ def fix_missing_entry(logger, speciesid):
         return 'FB'
     elif speciesid == 9606:
         return 'HGNC'
+    elif speciesid == 8364:
+        return 'Xenbase'
     else:
         logger.critical("Fatal error: cannot correct species %s" % (speciesid))
         quit()
@@ -61,7 +95,8 @@ def convert_algorithm_name(name_input):
         'Phylome': 'PhylomeDB',
         'Compara': 'Ensembl Compara',
         'Inparanoid': 'InParanoid',
-        'RoundUp': 'Roundup'
+        'RoundUp': 'Roundup',
+        'sonicParanoid': 'SonicParanoid'
     }
 
     # Try to get the new value by key, if the key is not found, send back the input value.
@@ -198,8 +233,8 @@ def main():    # noqa C901
                   'FROM gene_information gi '
                   'WHERE gi.speciesid = %s ')
 
-    for_op_table = ('SELECT op.ortholog_pairid, op.speciesid1, op.geneid1, op.speciesid2, op.geneid2, op.prediction_method '
-                    'FROM ortholog_pair op '
+    for_op_table = ('SELECT op.paralog_pairid, op.speciesid1, op.geneid1, op.speciesid2, op.geneid2, op.prediction_method '
+                    'FROM paralog_pair op '
                     'WHERE op.speciesid1 = %s '
                     'AND (op.speciesid2 = \'7955\' '
                     'OR op.speciesid2 = \'6239\' '
@@ -207,10 +242,11 @@ def main():    # noqa C901
                     'OR op.speciesid2 = \'10116\' '
                     'OR op.speciesid2 = \'4932\' '
                     'OR op.speciesid2 = \'7227\' '
-                    'OR op.speciesid2 = \'9606\') ')
+                    'OR op.speciesid2 = \'9606\' '
+                    'OR op.speciesid2 = \'8364\') ')
 
     for_opb_table = ('SELECT opb.geneid1, opb.geneid2, opb.speciesid1, opb.speciesid2, opb.score, opb.best_score, opb.best_score_rev, opb.confidence '
-                     'FROM ortholog_pair_best opb '
+                     'FROM paralog_pair_best opb '
                      'WHERE opb.speciesid1 = %s '
                      'AND (opb.speciesid2 = \'7955\' '
                      'OR opb.speciesid2 = \'6239\' '
@@ -218,14 +254,15 @@ def main():    # noqa C901
                      'OR opb.speciesid2 = \'10116\' '
                      'OR opb.speciesid2 = \'4932\' '
                      'OR opb.speciesid2 = \'7227\' '
-                     'OR opb.speciesid2 = \'9606\') ')
+                     'OR opb.speciesid2 = \'9606\' '
+                     'OR opb.speciesid2 = \'8364\') ')
 
     for_species_possibilities = ('SELECT distinct(sp1.speciesid), sp2.speciesid, op.prediction_method '
-                                 'FROM species sp1, species sp2, ortholog_pair op '
+                                 'FROM species sp1, species sp2, paralog_pair op '
                                  'WHERE op.speciesid1 = sp1.speciesid '
                                  'AND op.speciesid2 = sp2.speciesid ')
 
-    for_distinct_algorithms = ('SELECT distinct(prediction_method) FROM ortholog_pair')
+    for_distinct_algorithms = ('SELECT distinct(prediction_method) FROM paralog_pair')
 
     # Taxon IDs and species for reference.
     # 7955 = Danio rerio 
@@ -235,9 +272,10 @@ def main():    # noqa C901
     # 4932 = Saccharomyces cerevisiae S288c
     # 7227 = Drosophila melanogaster
     # 9606 = Homo sapiens
+    # 8364 = Xenopus tropicalis
 
     # Short species list for testing purposes.
-    species_list = [7227, 7955, 6239, 10090, 10116, 4932, 9606]
+    species_list = [7227, 7955, 6239, 10090, 10116, 4932, 9606, 8364]
 
     taxon_to_mod = {
         10116: 'RGD',
@@ -246,7 +284,8 @@ def main():    # noqa C901
         4932: 'SGD',
         6239: 'WormBase',
         7227: 'FlyBase',
-        9606: 'Human'
+        9606: 'Human',
+        8364: 'Xenbase'
     }
 
     # Obtain the total possible algorithms.
@@ -380,6 +419,7 @@ def main():    # noqa C901
     json_by_mod[4932] = []
     json_by_mod[7955] = []
     json_by_mod[7227] = []
+    json_by_mod[8364] = []
 
     for k, v in mini_database.items():
         geneid1 = k
@@ -407,17 +447,6 @@ def main():    # noqa C901
                     gene2_species = mini_database[geneid2]['species']
                     gene1_provider = mini_database[geneid1]['species_specific_geneid_type']
                     gene2_provider = mini_database[geneid2]['species_specific_geneid_type']
-
-                    # gene1_symbol = None
-                    # if 'symbol' in mini_database[geneid1]:
-                    #     gene1_symbol = mini_database[geneid1]['symbol']
-
-                    # gene2_symbol = None
-                    # if 'symbol' in mini_database[geneid2]:
-                    #     gene2_symbol = mini_database[geneid2]['symbol']
-
-                    if gene1_provider == gene2_provider:  # skipping paralogs for now.
-                        continue
 
                     # Possible algorithm matches and associated calculations.
                     possible_prediction_methods = algorithm_dictionary[gene1_species][gene2_species]
@@ -456,6 +485,11 @@ def main():    # noqa C901
                         logger.critical('gene2DataProvider %s' % (gene2_provider))
                         quit(-1)
 
+                    if gene1_species != gene2_species:
+                        logger.critical('Fatal error in gene1_species/gene2_species.')
+                        logger.critical('Species do not match.')
+                        quit(-1)
+
                     # The final JSON output is in dict_to_add below.
 
                     dict_to_add = {}
@@ -463,9 +497,8 @@ def main():    # noqa C901
                     dict_to_add['isBestScore'] = q['best_score']
                     dict_to_add['isBestRevScore'] = q['best_score_rev']
                     dict_to_add['gene1'] = geneid1_id
-                    dict_to_add['gene1Species'] = gene1_species
+                    dict_to_add['species'] = gene1_species
                     dict_to_add['gene2'] = geneid2_id
-                    dict_to_add['gene2Species'] = gene2_species
                     dict_to_add['predictionMethodsMatched'] = list(matched_prediction_methods)
                     dict_to_add['predictionMethodsNotMatched'] = list(not_matched_prediction_methods)
                     dict_to_add['predictionMethodsNotCalled'] = list(not_called_prediction_methods)
@@ -488,7 +521,7 @@ def main():    # noqa C901
     test_json_to_export['metaData'] = {}
     test_json_to_export['metaData']['dataProvider'] = dataProviderdict
     test_json_to_export['metaData']['dateProduced'] = the_time
-    test_json_to_export['metaData']['release'] = '7.0.5'
+    test_json_to_export['metaData']['release'] = '9.0'
     test_json_to_export['data'] = []
 
     print("Exporting JSON by MOD.")
@@ -497,7 +530,7 @@ def main():    # noqa C901
         to_export_as_json['metaData'] = {}
         to_export_as_json['metaData']['dataProvider'] = dataProviderdict
         to_export_as_json['metaData']['dateProduced'] = the_time
-        to_export_as_json['metaData']['release'] = '7.0.5'
+        to_export_as_json['metaData']['release'] = '9.0'
         to_export_as_json['data'] = json_by_mod[mod_species]
 
         for entry in json_by_mod[mod_species]:
@@ -506,21 +539,21 @@ def main():    # noqa C901
                 test_json_to_export['data'].append(entry)
 
         mod = taxon_to_mod[mod_species]
-        filename = 'orthology_%s_v9_test.json' % (mod)
+        filename = 'paralogy_%s_v9_test_with_xenbase.json' % (mod)
         print("Saving %s" % (filename))
         with open(filename, 'w') as outfile:
             json.dump(to_export_as_json, outfile, sort_keys=True, indent=2, separators=(',', ': '))
             outfile.close()
-        os.system("tar -czvf orthology_" + str(mod) + "_v9_test.json.tar.gz orthology_" + str(mod) + "_v9_test.json")
+        os.system("tar -czvf paralogy_" + str(mod) + "_v9_test_with_xenbase.json.tar.gz paralogy_" + str(mod) + "_v9_test_with_xenbase.json")
 
     print("Saving test JSON dataset.")
-    test_filename = 'orthology_test_data_v9_test.json'
+    test_filename = 'paralogy_test_data_v9_test_with_xenbase.json'
     print("Saving %s" % (test_filename))
     with open(test_filename, 'w') as outfile:
         json.dump(test_json_to_export, outfile, sort_keys=True, indent=2, separators=(',', ': '))
         outfile.close()
 
-    os.system("tar -czvf orthology_test_data_v9_test.json.tar.gz orthology_test_data_v9_test.json")
+    os.system("tar -czvf paralogy_test_data__v9_test_with_xenbase.json.tar.gz paralogy_test_data_v9_test_with_xenbase.json")
     # Close the database connection.
     conn_diopt.close()
 

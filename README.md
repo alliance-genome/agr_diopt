@@ -1,23 +1,8 @@
-[![Build Status](https://travis-ci.com/FlyBase/harvdev-diopt.svg?token=7Nvc5gEdzuNraK13EL3s&branch=master)](https://travis-ci.com/FlyBase/harvdev-diopt)
+# agr-diopt
 
-# harvdev-diopt
-
-Scripts for updating DIOPT data at FlyBase.
+Scripts for updating DIOPT data at the Alliance.
 
 ## Instructions for updating DIOPT
-
-### Creation of DIOPT working directories.
-
-- All past DIOPT work is performed (files processed, scripts run) in directories located under `/data/ortholog/diopt`. 
-- When working with a new version of DIOPT, first create a folder in `/data/ortholog/diopt/diopt_vX` where `X` is the current version (_e.g._ 9 or 10).
-- Within this folder, create a filed called `implement_diopt_vX.README`. This file will contain notes about implementing this particular version of DIOPT.
-- See previous DIOPT folders at `/data/ortholog/diopt` for examples of directory structure and this `README` file.
-
-### GitHub repository
-
-- This repository contains all necessary scripts for updating DIOPT. Please clone it into an appropriate folder for use.
-    - This does not need to necessarily be cloned into a directory under `/data/ortholog/diopt`.
-    - Anywhere Python scripts can be executed should be sufficient (_e.g._ your home directory, _etc._).
 
 ### Processing of DIOPT CSV files.
 
@@ -27,7 +12,7 @@ Scripts for updating DIOPT data at FlyBase.
 #### Examining and modifying DIOPT CSV files.
 
 - The script `ddl_tsv_to_csv.py` located in the `support_scripts` folder is used to process the DIOPT CSV files from Claire.
-- Extract the CSV files from Claire into your DIOPT folder at `/data/ortolog/diopt/diopt_vX`.
+
 - A DDL file from a previous version of DIOPT is required to process the CSV files.
     - The DDL file was originally extracted from the Postgres instance of the DIOPT data.
     - A Postgres instance of DIOPT data is no longer used in these scripts, but the DDL is still necessary to check the validity of the data.

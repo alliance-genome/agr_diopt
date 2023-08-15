@@ -4,31 +4,32 @@ import sys
 import csv
 import argparse
 import sqlparse
+import re
 
+def split_ddl_individual_entry(ddl_entry, dict_of_ddl_contents):
+    # Split on the first occurrence of "CREATE TABLE" and then split on newlines.
+    string_lines = ddl_entry.split('CREATE TABLE ')[1].split('\n')
+    table_title = "".join(re.findall("[a-zA-Z_]+", string_lines[0])) # Extract the table title from the first item in the list.
+    dict_of_ddl_contents[table_title] = dict()  # Create an empty dictionary to store the table information.
+    for command_row in string_lines[1:-1]:  # Loop between 2nd and n-1 entry (to ignore title and ending parenthesis).
+        cleaned_line = "".join(re.findall("[a-zA-Z0-9_ ]+", command_row)).strip(' ') # Extract the column names and column types.
+        cleaned_line_values = cleaned_line.split(' ') 
+        column_name = cleaned_line_values[0]
+        column_type = cleaned_line_values[1]
+        can_be_null = True
+        if 'NOT NULL' in cleaned_line:  # Check for NOT NULL declaration.
+            can_be_null = False
+        dict_of_ddl_contents[table_title][column_name] = (column_type, can_be_null)  # Populate the table dictionary.
+    return(dict_of_ddl_contents)
 
 def parse_ddl_contents(ddl_file_location):
     dict_of_ddl_contents = dict()  # Create a dictionary to store all of our DDL information.
     with open(ddl_file_location) as ddl_file:
         sql = ddl_file.read()
         ddls = sqlparse.split(sql)  # Splits the file into SQL statements.
-        for ddl in ddls:
-            if 'CREATE TABLE' in ddl:
-                # The following section could / should be updated with some cool regex.
-                # Using splits and strips works fine, but it's less efficient and less readable.
-                split_string = ddl.split('CREATE TABLE ')[1]  # Extract the CREATE TABLE commands.
-                string_lines = split_string.split('\n')  # Break them into a list separated by \n.
-                table_title = string_lines[0].split(' ')[0]  # Extract the table title from the first item in the list.
-                dict_of_ddl_contents[table_title] = dict()  # Create an empty dictionary to store the table information.
-                for command_row in string_lines[1:-1]:  # Loop between 2nd and n-1 entry (to ignore title and ); characters).
-                    cleaned_line = command_row.strip(' ')  # Remove whitespace from beginning and end of string.
-                    column_name_and_type = cleaned_line.split(' ', 2)  # Split off the column name and type.
-                    column_name = column_name_and_type[0]  # Save the column name.
-                    column_type = column_name_and_type[1].split('(')[0]  # Remove parenthesis from column type.
-                    column_type = column_type.replace(',', '')  # Remove commas from column type.
-                    can_be_null = True
-                    if 'NOT NULL' in cleaned_line:  # Check for NOT NULL declaration.
-                        can_be_null = False
-                    dict_of_ddl_contents[table_title][column_name] = (column_type, can_be_null)  # Populate the table dictionary.
+        for ddl_entry in ddls:
+            if 'CREATE TABLE' in ddl_entry:
+                dict_of_ddl_contents = split_ddl_individual_entry(ddl_entry, dict_of_ddl_contents)
     return(dict_of_ddl_contents)
 
 

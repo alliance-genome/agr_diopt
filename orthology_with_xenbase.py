@@ -22,6 +22,9 @@ class OrthologyPair(object):
     # A dictionary to keep track of parid and its instance.
     ortholog_tuple_dict = {}
 
+    # A dictionary to keep track of parid and its instance without the second gene
+    ortholog_tuple_dict_no_geneid2 = {}
+
     # A set to track a "unique" interaction between two genes from two species.
     # It contains tuples of (gene1, gene2, species1, species2).
     # We check this tracking tuple before we make a new OrthologPair object.
@@ -63,6 +66,19 @@ class OrthologyPair(object):
         except KeyError:
             return None
 
+    # Class method to add to the unique tracking tuple without second gene id.
+    @classmethod
+    def add_to_ortholog_tuple_dict_no_geneid2(cls, tuple, value):
+        cls.ortholog_tuple_dict_no_geneid2[tuple] = value
+
+    # Class method to search the unique tracking tuple without second gene id.
+    @classmethod
+    def get_ortholog_tuple_dict_no_geneid2(cls, value):
+        try: 
+            return cls.ortholog_tuple_dict_no_geneid2[value]
+        except KeyError:
+            return None
+
     # Class method to return a list of all instances.
     @classmethod
     def get_all_instances(cls):
@@ -98,39 +114,15 @@ def obtain_data_from_database_query_variable(connection, query, query_variable):
 def load_xenbase_sourced_data(logger):
     # Some of the orthology data is sourced directly from Xenbase in the form of JSON files.
     # We need to load these data separately and then merge them with the data from the other sources.
-    xenbase_json_filename = 'source_data/diopt_v9/orthology/from_xenbase/xb_Orthology_meta_data_merged.json'
-    xenbase_json_filename2 = 'source_data/diopt_v9/orthology/from_xenbase/xb_Orthology2_meta_data_merged.json'
-    mapping_file_laevis = 'GenePageLaevisEntrezGeneUnigeneMapping.txt'
-    mapping_file_tropicalis = 'GenePageTropicalisEntrezGeneUnigeneMapping.txt'
-    symbol_file = 'XenbaseGenepageToGeneIdMapping.txt'
+    xenbase_json_filename = 'source_data/diopt_v9/orthology/from_xenbase/10_18_2022/ORTHOLOGY_XB.json'
+    xenbase_json_filename2 = 'source_data/diopt_v9/orthology/from_xenbase/10_18_2022/ORTHOLOGY_XBXT.json'
 
-    def process_xenbase_mapping_file(mapping_file):
-        mapping_dictionary = {}
-
-        # Open mapping file with tsv.
-        with open(mapping_file, 'r') as mapping_file:
-            mapping_reader = csv.reader(mapping_file, delimiter='\t')
-            mapping_data = list(mapping_reader)
-        
-            for item in mapping_data:
-                mapping_dictionary[item[2]] = item[0]
-
-        return mapping_dictionary
-
-    def process_xenbase_symbol_file(symbol_file):
-        symbol_dictionary = {}
-
-        # Open mapping file with tsv.
-        with open(symbol_file, 'r') as symbol_file:
-            symbol_reader = csv.reader(symbol_file, delimiter='\t')
-            symbol_data = list(symbol_reader)
-        
-            for item in symbol_data:
-                symbol_dictionary[[item[2]][0]] = [item[3]][0]
-                symbol_dictionary[[item[4]][0]] = [item[5]][0]
-                symbol_dictionary[[item[6]][0]] = [item[7]][0]
-
-        return symbol_dictionary
+    def keep_only_xenbase_algorithms(algorithm_list):
+        processed_list = []
+        for entry in algorithm_list:
+            if 'Xenbase' in entry['predictionMethodsMatched']:
+                processed_list.append(entry)
+        return processed_list
 
     def remove_entries_missing_genes(json_data_structure):
         # Cycle through the JSON data structure and warn/remove missing gene1/gene2 entries.
@@ -139,12 +131,14 @@ def load_xenbase_sourced_data(logger):
         total_missing_entries = 0
         search_list = ['gene1', 'gene2']
         for key in json_data_structure['data']:
+            found_missing_entry = False
             for search_item in search_list:
                 if not any(char.isalpha() or char.isdigit() for char in key[search_item]):
                     total_missing_entries += 1
-                else:
-                    # Add key to processed list.
-                    processed_json_list.append(key)
+                    found_missing_entry = True
+            # Add key to processed list.
+            if not found_missing_entry:
+                processed_json_list.append(key)
         
         if total_missing_entries > 0:
             logger.warning('Xenbase data warning:')
@@ -161,81 +155,111 @@ def load_xenbase_sourced_data(logger):
     xenbase_to_human_list = remove_entries_missing_genes(xenbase_to_human)
     tropicalis_to_laevis_list = remove_entries_missing_genes(tropicalis_to_laevis)
 
-    # Load the necessary mapping files to convert the Xenbase identifiers from ENTREZ to XB-GENE.
-    # This may be unnecessary in the future if Troy sends over modified JSON files (as per our email discussions).
-    laevis_map = process_xenbase_mapping_file(mapping_file_laevis)
-    tropicalis_map = process_xenbase_mapping_file(mapping_file_tropicalis)
+    xenbase_to_human_list = keep_only_xenbase_algorithms(xenbase_to_human_list)
+    tropicalis_to_laevis_list = keep_only_xenbase_algorithms(tropicalis_to_laevis_list)
 
-    species_list = [8355, 8364]
-    maps = [laevis_map, tropicalis_map]
+    logger.info('Loading Xenbase data and checking number of entries.')
+    # Loop through the JSON data and determine the number of entries.
+    tropicalis_to_human_entries = 0
     for key in xenbase_to_human_list:
-        for i in range(len(species_list)):
-            if key['gene1Species'] == species_list[i]:
-                try:
-                    key['gene1'] = maps[i][key['gene1']]
-                except KeyError:
-                    pass
+        if key['gene1Species'] == 8364 and key['gene2Species'] == 9606:
+                tropicalis_to_human_entries += 1
 
-    # Check whether every gene1 is a valid gene ID with XB-GENE.
-    gene1_invalid_id_list = []
-
+    laevis_to_human_entries = 0
     for key in xenbase_to_human_list:
-        if not 'XB-GENE' in key['gene1']:
-            gene1_invalid_id_list.append(key['gene1'])
-            del key
+        if key['gene1Species'] == 8355 and key['gene2Species'] == 9606:
+                laevis_to_human_entries += 1
 
-    if len(gene1_invalid_id_list) > 0:
-        logger.warning('Xenbase data warning:')
-        logger.warning("%s gene1 entries were removed from the JSON data structure due to invalid gene1 entries." % (len(gene1_invalid_id_list)))
+    human_to_tropicalis_entries = 0
+    for key in xenbase_to_human_list:
+        if key['gene1Species'] == 9606 and key['gene2Species'] == 8364:
+                human_to_tropicalis_entries += 1
 
-    # Add symbols to data structure.
-    failed_symbol_addition = 0
-    xenbase_symbol_file = process_xenbase_symbol_file(symbol_file)
+    human_to_laevis_entries = 0
+    for key in xenbase_to_human_list:
+        if key['gene1Species'] == 9606 and key['gene2Species'] == 8355:
+                human_to_laevis_entries += 1
 
-    for entry in xenbase_to_human_list:
-        try:
-            entry['gene1Symbol'] = xenbase_symbol_file[entry['gene1']]
-        except KeyError:
-            failed_symbol_addition += 1
-            pass
+    tropicalis_to_laevis_entries = 0
+    for key in tropicalis_to_laevis_list:
+        if key['gene1Species'] == 8364 and key['gene2Species'] == 8355:
+            tropicalis_to_laevis_entries += 1
 
-    if failed_symbol_addition > 0:
-        logger.warning('Xenbase data warning:')
-        logger.warning("%s gene1 entries did not have symbols added." % (failed_symbol_addition))
+    laevis_to_tropicalis_entries = 0
+    for key in tropicalis_to_laevis_list:
+        if key['gene1Species'] == 8355 and key['gene2Species'] == 8364:
+            laevis_to_tropicalis_entries += 1
+
+    logger.info('Total Xenbase entries (Tropicalis to Human): %s' % (tropicalis_to_human_entries))
+    logger.info('Total Xenbase entries (Human to Tropicalis): %s' % (human_to_tropicalis_entries))
+    logger.info('Total Xenbase entries (Laevis to Human): %s' % (laevis_to_human_entries))
+    logger.info('Total Xenbase entries (Human to Laevis): %s' % (human_to_laevis_entries))
+    logger.info('Total Xenbase entries (Tropicalis to Laevis): %s' % (tropicalis_to_laevis_entries))
+    logger.info('Total Xenbase entries (Laevis to Tropicalis): %s' % (laevis_to_tropicalis_entries))
+    logger.info('Combined Xenbase entries: %s' % (tropicalis_to_human_entries + laevis_to_human_entries + tropicalis_to_laevis_entries))
 
     return (xenbase_to_human_list, tropicalis_to_laevis_list)
 
 def fix_identifier(logger, identifier, speciesid):
-    if speciesid == 7955:  # ZFIN
-        identifier_output = 'DRSC:' + identifier
-        return identifier_output
-    elif speciesid == 6239:  # WB
-        identifier_output = 'DRSC:' + identifier
-        return identifier_output
-    elif speciesid == 10090:  # MGI
-        identifier_output = 'DRSC:MGI:' + identifier
-        return identifier_output
-    elif speciesid == 10116:  # RGD
-        identifier_output = 'DRSC:RGD:' + identifier
-        return identifier_output
-    elif speciesid == 4932:  # SGD
-        identifier_output = 'DRSC:' + identifier
-        return identifier_output
-    elif speciesid == 7227:  # FB
-        identifier_output = 'DRSC:' + identifier
-        return identifier_output
-    elif speciesid == 9606:  # HGNC
-        identifier_output = 'DRSC:HGNC:' + identifier
-        return identifier_output
-    elif speciesid == 8364:  # Xenbase
-        identifier_output = 'DRSC:Xenbase:' + identifier
-        return identifier_output
-    elif speciesid == 8355:  # Xenbase
-        identifier_output = 'DRSC:Xenbase:' + identifier
-        return identifier_output
+    if identifier[:5] != 'DRSC:':
+
+        if speciesid == 7955:  # ZFIN
+            identifier_output = 'DRSC:' + identifier
+        elif speciesid == 6239:  # WB
+            identifier_output = 'DRSC:' + identifier
+        elif speciesid == 10090:  # MGI
+            identifier_output = 'DRSC:MGI:' + identifier
+        elif speciesid == 10116:  # RGD
+            identifier_output = 'DRSC:RGD:' + identifier
+        elif speciesid == 4932:  # SGD
+            identifier_output = 'DRSC:' + identifier
+        elif speciesid == 7227:  # FB
+            identifier_output = 'DRSC:' + identifier
+        elif speciesid == 9606:  # HGNC
+            identifier_output = 'DRSC:HGNC:' + identifier
+        elif speciesid == 8364:  # Xenbase
+            # If this is coming from DIOPT, it will be missing the Xenbase: prefix as well.
+            # We need to add it.
+            # If this is coming from Xenbase, it will already have this prefix
+            # Check for the prefix Xenbase and if it is not present, add it.
+            if identifier.startswith('Xenbase:'):
+                identifier_output = 'DRSC:' + identifier
+            else:
+                identifier_output = 'DRSC:Xenbase:' + identifier
+        elif speciesid == 8355:  # Xenbase
+            # If this is coming from DIOPT, it will be missing the Xenbase: prefix as well.
+            # We need to add it.
+            # If this is coming from Xenbase, it will already have this prefix
+            # Check for the prefix Xenbase and if it is not present, add it.
+            if identifier.startswith('Xenbase:'):
+                identifier_output = 'DRSC:' + identifier
+            else:
+                identifier_output = 'DRSC:Xenbase:' + identifier
+        else:
+            logger.critical("Fatal error: cannot correct species specific gene id %s" % (identifier))
+            quit()
+
     else:
-        logger.critical("Fatal error: cannot correct species specific gene id %s" % (identifier))
-        quit()
+        identifier_output = identifier
+
+    starts_with_identifier_dict_by_species = {
+            7955: 'DRSC:ZDB',
+            6239: 'DRSC:WBGene',
+            10090: 'DRSC:MGI',
+            10116: 'DRSC:RGD',
+            4932: 'DRSC:S', # This looks wrong but it's actually correct.
+            7227: 'DRSC:FBgn',
+            9606: 'DRSC:HGNC',
+            8364: 'DRSC:Xenbase:XB-GENE',
+            8355: 'DRSC:Xenbase:XB-GENE'
+        }
+
+    # Check whether the identifier starts with the correct prefix.
+
+    if not identifier_output.startswith(starts_with_identifier_dict_by_species[speciesid]):
+        return None
+    else:
+        return identifier_output
 
 def fix_species_specific_geneid_type(logger, field, speciesid):
 
@@ -354,6 +378,8 @@ diopt_missing_species_specific_geneid = []
 diopt_missing_species_specific_geneid_and_symbol = []
 diopt_found_in_pair_table_missing_from_gene_information_table = []
 xenbase_duplicate_data = []
+xenbase_duplicate_data_by_species = nested_dict(2, set)
+failed_gene_information_lookup = []
 
 def main():    # noqa C901
 
@@ -571,24 +597,24 @@ def main():    # noqa C901
         # Update identifiers
         # TODO Load BGI files from FMS and update gene identifiers.
         
-        # Data wrangling.
-        # This updates the species_specific_geneid field with the 'DRSC:' prefix.
-        # Only if the species_specific_geneid doesn't already start with 'DRSC:'.
-        if species_specific_geneid[:5] != 'DRSC:':
-            species_specific_geneid = fix_identifier(logger, species_specific_geneid, species)
-        # Fix special case for Xenbase identifiers. Change DRSC:XB: to DRSC:Xenbase:
-        if species_specific_geneid[:8] == 'DRSC:XB:':
-            species_specific_geneid = 'DRSC:Xenbase:' + species_specific_geneid[8:]
-            
-        # This updates the species_specific_geneid_type field with the proper MOD name (e.g. FB, WB, ZFIN).
-        mod_data_source = fix_species_specific_geneid_type(logger, species_specific_geneid_type, species)
-
         # If the data is from Xenbase, then we won't have a geneid.
         # We need to get the largest number from the gene_information_database keys and make our own.
         # It's not referenced in any way, so the number itself doesn't matter.
         # The geneid is only used for lookups with DIOPT data.
         if diopt_geneid is None:
             diopt_geneid = max(gene_information_database.keys()) + 1
+
+        # Data wrangling.
+        # This updates the species_specific_geneid field with the 'DRSC:' prefix.
+        # Only if the species_specific_geneid doesn't already start with 'DRSC:'.
+        species_specific_geneid = fix_identifier(logger, species_specific_geneid, species)
+
+        # If fixing the identifier returned a None value.
+        if species_specific_geneid is None:
+            return gene_information_database, diopt_geneid  
+
+        # This updates the species_specific_geneid_type field with the proper MOD name (e.g. FB, WB, ZFIN).
+        mod_data_source = fix_species_specific_geneid_type(logger, species_specific_geneid_type, species)
 
         # Create a new blank dictionary for the gene information.
         gene_information_database[diopt_geneid] = {}
@@ -603,8 +629,22 @@ def main():    # noqa C901
     def create_new_ortholog_pair_object(gene_information_database, diopt_geneid1, diopt_geneid2, speciesid1, speciesid2, data_source, **best_info_and_algorithms):
 
         # First, lookup the species_specific_geneid for each gene.
-        species_specific_geneid1 = gene_information_database[diopt_geneid1]['species_specific_geneid']
-        species_specific_geneid2 = gene_information_database[diopt_geneid2]['species_specific_geneid']
+        try:
+            species_specific_geneid1 = gene_information_database[diopt_geneid1]['species_specific_geneid']
+        except KeyError:
+            # Add to failed list.
+            failed_gene_information_lookup.append((diopt_geneid1, speciesid1))
+            return
+        try:
+            species_specific_geneid2 = gene_information_database[diopt_geneid2]['species_specific_geneid']
+        except KeyError:
+            # Add to failed list.
+            failed_gene_information_lookup.append((diopt_geneid2, speciesid2))
+            return
+
+        # if diopt_geneid1 == 548903 or diopt_geneid2 == 548903:
+        #     logger.info('{} {} {} {} {}'.format(diopt_geneid1, diopt_geneid2, speciesid1, speciesid2, data_source))
+        #     logger.info('{} {}'.format(species_specific_geneid1, species_specific_geneid2))
 
         # Second, check if we're already storing this ortholog pair via the tracking tuple set.
         # Third, we need to check the data source. We don't want to store duplicate data from DIOPT and Xenbase.
@@ -616,6 +656,8 @@ def main():    # noqa C901
             # Check the data source and compare it to the existing data source.
             existing_data_source = ortholog_pair.get_data_source()
             # If it's the same data source, then we add to it.
+            # if species_specific_geneid1 == 'DRSC:Xenbase:XB-GENE-5843537':
+            #     logger.info('{} {} {} {}'.format(species_specific_geneid1, species_specific_geneid2, speciesid1, speciesid2))
             if existing_data_source == data_source:
                 # We should only be adding to existing DIOPT data. Xenbase is finished after the first pass.
                 if data_source == 'DIOPT': 
@@ -625,10 +667,10 @@ def main():    # noqa C901
                     return
                 else:
                     xenbase_duplicate_data.append((tracking_tuple, best_info_and_algorithms))
+                    xenbase_duplicate_data_by_species[speciesid1][speciesid2].add((species_specific_geneid1, species_specific_geneid2))
                     return
             # If there's a different data source, then we skip it and don't create duplicate data.
             # This would be the case where DIOPT (processed first) has already created an entry for an ortholog pair.
-            # We need to discuss how to handle these instances with the orthology / paralogy working group.
             else:
                 xenbase_diopt_ortholog_pair_conflict.append((species_specific_geneid1, species_specific_geneid2, speciesid1, speciesid2))
                 return 
@@ -769,6 +811,15 @@ def main():    # noqa C901
             diopt_geneid2 = k[4]
             prediction_method = k[5]
 
+            # if speciesid1 == 8364:
+            #     logger.info('{}'.format(k))
+
+            # if diopt_geneid1 == 548903:
+            #     logger.info('{}'.format(k))
+
+            # if diopt_geneid2 == 548903:
+            #     logger.info('{}'.format(k))
+
             # TODO: Investigate further
             if diopt_geneid1 not in gene_information_database:
                 diopt_found_in_pair_table_missing_from_gene_information_table.append((speciesid1, ortholog_pairid))
@@ -792,7 +843,6 @@ def main():    # noqa C901
         logger.info('Adding Xenbase data to gene_information_database.')
 
         diopt_geneid = None # Starts as None.
-        ortholog_pairid = None # Starts as None.
 
         for item in tqdm(source_dict):
             gene1_species = item['gene1Species']
@@ -825,7 +875,7 @@ def main():    # noqa C901
 
             data_source = 'Xenbase'
 
-            create_new_ortholog_pair_object(gene_information_database, diopt_geneid1, diopt_geneid2, speciesid1, speciesid2, data_source, **best_info_and_algorithms)
+            create_new_ortholog_pair_object(gene_information_database, diopt_geneid1, diopt_geneid2, gene1_species, gene2_species, data_source, **best_info_and_algorithms)
 
         return gene_information_database
     
@@ -838,11 +888,14 @@ def main():    # noqa C901
     logger.info('Updating algorithms and filters.')
     for item in tqdm(ortholog_pair_objects_list):
         data_source = item.data_source
+
+        # Needed for DIOPT and Xenbase calculations.
+        matched_prediction_methods = set(item.predictionMethodsMatched)
+
         if data_source == 'Xenbase':
             item.predictionMethodsNotMatched = set(item.predictionMethodsNotMatched)
             item.predictionMethodsNotCalled = set(item.predictionMethodsNotCalled)
-            item.predictionMethodsMatched = set(item.predictionMethodsMatched)
-            continue
+            item.predictionMethodsMatched = set(item.predictionMethodsMatched)     
         else:
             gene1_species = item.gene1Species
             gene2_species = item.gene2Species
@@ -856,27 +909,105 @@ def main():    # noqa C901
             item.predictionMethodsNotMatched = not_matched_prediction_methods
             item.predictionMethodsNotCalled = not_called_prediction_methods
 
-            # Determine the stringency filter to add.
-            strict_filter = False
-            moderate_filter = False
+        # Determine the stringency filter to add.
+        strict_filter = False
+        moderate_filter = False
 
-            if 'ZFIN' in matched_prediction_methods or 'HGNC' in matched_prediction_methods:
-                strict_filter = True
-                moderate_filter = True
+        if 'ZFIN' in matched_prediction_methods or 'HGNC' in matched_prediction_methods or 'Xenbase' in matched_prediction_methods:
+            strict_filter = True
+            moderate_filter = True
 
-            best_score = item.isBestScore
-            best_rev_score = item.isBestRevScore
+        best_score = item.isBestScore
+        best_rev_score = item.isBestRevScore
 
-            if (len(matched_prediction_methods) > 2 and ((best_score == 'Yes' or best_score == 'Yes_Adjusted') or best_rev_score == 'Yes')) \
-                    or (len(matched_prediction_methods) == 2 and ((best_score == 'Yes' or best_score == 'Yes_Adjusted') and best_rev_score == 'Yes')):
-                strict_filter = True
+        if (len(matched_prediction_methods) > 2 and ((best_score == 'Yes' or best_score == 'Yes_Adjusted') or best_rev_score == 'Yes')) \
+                or (len(matched_prediction_methods) == 2 and ((best_score == 'Yes' or best_score == 'Yes_Adjusted') and best_rev_score == 'Yes')):
+            strict_filter = True
 
-            elif len(matched_prediction_methods) > 2 \
-                    or (len(matched_prediction_methods) == 2 and ((best_score == 'Yes' or best_score == 'Yes_Adjusted') and best_rev_score == 'Yes')):
-                moderate_filter = True
+        elif len(matched_prediction_methods) > 2 \
+                or (len(matched_prediction_methods) == 2 and ((best_score == 'Yes' or best_score == 'Yes_Adjusted') and best_rev_score == 'Yes')):
+            moderate_filter = True
 
-            item.moderateFilter = moderate_filter
-            item.strictFilter = strict_filter
+        item.moderateFilter = moderate_filter
+        item.strictFilter = strict_filter
+
+    # Printing out some stats.
+
+    # Transform xenbase_diopt_ortholog_pair_conflict from a list to a set.
+    xenbase_diopt_ortholog_pair_conflict_set = set(xenbase_diopt_ortholog_pair_conflict)
+
+    logger.info('Total number of xenbase_diopt_ortholog_pair_conflict: %s' % (len(xenbase_diopt_ortholog_pair_conflict_set)))
+    logger.info('Total number of duplicate Xenbase entries: %s' % (len(xenbase_duplicate_data)))
+    logger.info('Total number of diopt_missing_species_specific_geneid: %s' % (len(diopt_missing_species_specific_geneid)))
+    logger.info('Total number of diopt_missing_species_specific_geneid_and_symbol: %s' % (len(diopt_missing_species_specific_geneid_and_symbol)))
+    logger.info('Total number of diopt_found_in_pair_table_missing_from_gene_information_table: %s' % (len(diopt_found_in_pair_table_missing_from_gene_information_table)))
+
+    # Print counts from the more complicated nested dict xenbase_duplicate_data_by_species.
+    total_xenbase_skipped = 0
+
+    for species1 in xenbase_duplicate_data_by_species:
+        for species2 in xenbase_duplicate_data_by_species[species1]:
+            total_xenbase_skipped += len(xenbase_duplicate_data_by_species[species1][species2])
+            logger.info('Total number of duplicate Xenbase entries for %s and %s: %s' % (species1, species2, len(xenbase_duplicate_data_by_species[species1][species2])))
+
+    logger.info('Total number of duplicate Xenbase entries skipped: %s' % (total_xenbase_skipped))
+
+    # Open a log file to save this information.
+    log_file = open('log_file.txt', 'w')
+
+    for item in xenbase_duplicate_data:
+        log_file.write('{}\n'.format(item))
+
+    # Checking for unidirectional orthology issues.
+    logger.info('Checking for unidirectional orthology issues.')
+
+    tropicalis_to_human_uni_check = {}
+    human_to_tropicalis_uni_check = {}
+
+    for item in tqdm(ortholog_pair_objects_list):
+
+        isBestScore = item.isBestScore
+        isBestRevScore = item.isBestRevScore
+        gene1 = item.species_specific_geneid1
+        gene2 = item.species_specific_geneid2
+        gene1Species = item.gene1Species
+        gene2Species = item.gene2Species
+        predictionMethodsMatched = item.predictionMethodsMatched
+        predictionMethodsNotMatched = item.predictionMethodsNotMatched
+        predictionMethodsNotCalled = item.predictionMethodsNotCalled
+        confidence = item.confidence
+        strictFilter = item.strictFilter
+        moderateFilter = item.moderateFilter
+
+        # Skipping paralogs
+        if gene1Species == gene2Species:
+            continue
+
+        if gene1Species == 8355 and gene2Species == 9606:
+            tropicalis_to_human_uni_check[gene1] = gene2
+
+        if gene1Species == 9606 and gene2Species == 8355:
+            human_to_tropicalis_uni_check[gene1] = gene2
+
+    # Check if the key and value from one dictionary exist as a reversed key and value in the other dictionary.
+    # If so, then the ortholog pair is unidirectional.
+    trop_to_human_unidirectional_ortholog_pairs = []
+    human_to_trop_unidirectional_ortholog_pairs = []
+
+    for item in tropicalis_to_human_uni_check:
+        item_to_check = tropicalis_to_human_uni_check[item]
+        if not item_to_check in human_to_tropicalis_uni_check.keys():
+            trop_to_human_unidirectional_ortholog_pairs.append((item, item_to_check))
+
+    for item in human_to_tropicalis_uni_check:
+        item_to_check = human_to_tropicalis_uni_check[item]
+        if not item_to_check in tropicalis_to_human_uni_check.keys():
+            human_to_trop_unidirectional_ortholog_pairs.append((item, item_to_check))
+
+    logger.info('Total number of unidirectional ortholog pairs from tropicalis to human: %s' % (len(trop_to_human_unidirectional_ortholog_pairs)))
+    logger.info('Total number of unidirectional ortholog pairs from human to tropicalis: %s' % (len(human_to_trop_unidirectional_ortholog_pairs)))
+    
+    logger.info('Total number of failed gene information lookups: %s' % (len(failed_gene_information_lookup)))
 
     # Loop though our nested dictionaries and form the JSON for export.  
 
@@ -914,6 +1045,9 @@ def main():    # noqa C901
         confidence = item.confidence
         strictFilter = item.strictFilter
         moderateFilter = item.moderateFilter
+
+        # if gene1 == 'DRSC:XB-GENE-5843537' or gene2 == 'DRSC:XB-GENE-5843537':
+        #     logger.info('{} {} {} {}'.format(gene1, gene2, gene1Species, gene2Species))
 
         # Skipping paralogs
         if gene1Species == gene2Species:
@@ -990,15 +1124,6 @@ def main():    # noqa C901
     logger.info(tf)
 
     te = tf - ts
-
-    # Transform xenbase_diopt_ortholog_pair_conflict from a list to a set.
-    xenbase_diopt_ortholog_pair_conflict_set = set(xenbase_diopt_ortholog_pair_conflict)
-
-    logger.info('Total number of xenbase_diopt_ortholog_pair_conflict: %s' % (len(xenbase_diopt_ortholog_pair_conflict_set)))
-    logger.info('Total number of duplicate Xenbase entries: %s' % (len(xenbase_duplicate_data)))
-    logger.info('Total number of diopt_missing_species_specific_geneid: %s' % (len(diopt_missing_species_specific_geneid)))
-    logger.info('Total number of diopt_missing_species_specific_geneid_and_symbol: %s' % (len(diopt_missing_species_specific_geneid_and_symbol)))
-    logger.info('Total number of diopt_found_in_pair_table_missing_from_gene_information_table: %s' % (len(diopt_found_in_pair_table_missing_from_gene_information_table)))
 
     logger.info('Total orthology comparisons by MOD:')
     for mod in json_by_mod:

@@ -137,3 +137,30 @@ dmypy.json
 # DIOPT files
 *.ddl
 DIOPT*
+
+# Pickle files
+*.p
+
+# Compressed or packaged files
+*.gz
+*.zip
+*.7z
+*.tar
+
+# JSON files
+*.json
+
+# Images files
+*.png 
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.gif
+
+# TSV and CSV files
+*.tsv
+*.csv
+
+# Text files
+*.txt
