@@ -5,6 +5,8 @@ import os
 import pickle
 import datetime
 import json
+import pprint
+from tqdm import tqdm
 import csv
 from nested_dict import nested_dict
 import configparser
@@ -161,6 +163,30 @@ def load_test_set_of_genes():
 
     return test_set_of_genes
 
+def assign_percentage_bins(lengths):
+    if not lengths:  # Check if lengths is empty
+        return []
+    max_length = max(lengths)
+    bin_thresholds = [0.75 * max_length, 0.5 * max_length, 0.25 * max_length]
+    bins = []
+    for length in lengths:
+        if length > bin_thresholds[0]:
+            bins.append(1)
+        elif length > bin_thresholds[1]:
+            bins.append(2)
+        elif length > bin_thresholds[2]:
+            bins.append(3)
+        else:
+            bins.append(4)
+    return bins
+
+def prediction_score(entry):
+    # Calculate the ratio of matched to possible methods
+    ratio = len(entry['matched_prediction_methods']) / (len(entry['possible_prediction_methods']) + 1e-5)  # added a small value to avoid division by zero
+    # Penalty for not_matched methods
+    penalty = len(entry['not_matched_prediction_methods'])
+    return ratio - penalty
+
 def main():    # noqa C901
 
     parser = argparse.ArgumentParser(
@@ -264,6 +290,9 @@ def main():    # noqa C901
 
     for_distinct_algorithms = ('SELECT distinct(prediction_method) FROM paralog_pair')
 
+    for_alignment = ('SELECT b.geneid1, b.geneid2, align_length, align_score, align_identity, align_similarity from protein_data '
+                     'as a, paralog_pair_best as b where a.geneid1=b.geneid1 and a.geneid2=b.geneid2')
+
     # Taxon IDs and species for reference.
     # 7955 = Danio rerio 
     # 6239 = Caenorhabditis elegans 
@@ -288,6 +317,28 @@ def main():    # noqa C901
         8364: 'Xenbase'
     }
 
+    # Obtain all the protein pair records containing similarity, identity, etc.
+    logger.info('Obtaining protein pair information.')
+    return_protein_pair = obtain_data_from_database(conn_diopt, for_alignment)    
+
+    # Print out the number of records returned.
+    logger.info('Returned {} records'.format(len(return_protein_pair)))
+
+    # (293085, 300605, 315.0, 541.0, 0.393651, 0.574603)
+    logger.info('Converting returned list to a dictionary.')
+    protein_pair_dict = {}
+    for item in tqdm(return_protein_pair):
+        if item[0] not in protein_pair_dict:
+            protein_pair_dict[item[0]] = {}
+        if item[1] not in protein_pair_dict[item[0]]:
+            protein_pair_dict[item[0]][item[1]] = {}
+        protein_pair_dict[item[0]][item[1]]['length'] = item[2]
+        protein_pair_dict[item[0]][item[1]]['score'] = item[3]
+        protein_pair_dict[item[0]][item[1]]['identity'] = item[4]
+        protein_pair_dict[item[0]][item[1]]['similarity'] = item[5]
+
+
+    logger.info('Obtaining algorithm list.')
     # Obtain the total possible algorithms.
     returned_distinct_algorithms = obtain_data_from_database(conn_diopt, for_distinct_algorithms)
 
@@ -308,7 +359,8 @@ def main():    # noqa C901
     # First level is species1, second level is species2, third level is a set with all the algorithms called.
     algorithm_dictionary = nested_dict(2, set)
 
-    for i in returned_possible_combinations:
+    logger.info('Creating algorithm dictionary.')
+    for i in tqdm(returned_possible_combinations):
         algorithm_name = convert_algorithm_name(i[2])
         algorithm_dictionary[i[0]][i[1]].add(algorithm_name)
 
@@ -399,6 +451,109 @@ def main():    # noqa C901
                 mini_database[geneid][geneid2]['best_score'] = b[5]
                 mini_database[geneid][geneid2]['best_score_rev'] = b[6]
                 mini_database[geneid][geneid2]['confidence'] = b[7]
+
+        # Adding the prediction methods and alignment data to each pair.
+        print("Sorting prediction methods and alignment stats each possible paralog combination.")
+        key_error_tracker = 0        
+        geneid2_missing = 0
+        successful = 0
+        for k, v in tqdm(mini_database.items()):
+            geneid1 = k
+            if isinstance(v, dict):
+                for j, q in v.items():
+                    if isinstance(q, dict):
+                        geneid2 = j
+
+                        # TODO: Investigate futher.
+                        if geneid2 not in mini_database:
+                            geneid2_missing += 1
+                            continue
+
+                        gene1_species = mini_database[geneid1]['species']
+                        gene2_species = mini_database[geneid2]['species']
+
+                        possible_prediction_methods = algorithm_dictionary[gene1_species][gene2_species]
+                        matched_prediction_methods = q['prediction_method']
+                        not_called_prediction_methods = total_possible_algorithms - possible_prediction_methods  # subtracting sets
+                        not_matched_prediction_methods = possible_prediction_methods - matched_prediction_methods  # subtracting sets
+        
+                        # Add the methods to the geneid2 dictionary.
+                        mini_database[geneid1][geneid2]['not_called_prediction_methods'] = not_called_prediction_methods
+                        mini_database[geneid1][geneid2]['not_matched_prediction_methods'] = not_matched_prediction_methods
+                        mini_database[geneid1][geneid2]['matched_prediction_methods'] = matched_prediction_methods
+                        mini_database[geneid1][geneid2]['possible_prediction_methods'] = possible_prediction_methods
+
+                        
+                        # Add the alignment data to the geneid2 dictionary.
+                        try:
+                            mini_database[geneid1][geneid2]['length'] = protein_pair_dict[geneid1][geneid2]['length']
+                            mini_database[geneid1][geneid2]['score'] = protein_pair_dict[geneid1][geneid2]['score']
+                            mini_database[geneid1][geneid2]['identity'] = protein_pair_dict[geneid1][geneid2]['identity']
+                            mini_database[geneid1][geneid2]['similarity'] = protein_pair_dict[geneid1][geneid2]['similarity']
+                            successful += 1
+                        except KeyError:
+                            key_error_tracker += 1
+                            continue
+
+        print('Key errors: {}'.format(key_error_tracker))
+        print('geneid2 missing: {}'.format(geneid2_missing))
+        print('Successful: {}'.format(successful))
+
+        print('Assigning ranks to each paralog pair.')
+        skipped_count = 0
+        for gene1, gene2_data in mini_database.items():
+            gene2_dicts = {key: value for key, value in gene2_data.items() if isinstance(value, dict)}
+
+            # Filter out gene2 entries missing 'matched_prediction_methods'
+            valid_gene2_keys = [key for key in gene2_dicts if 'matched_prediction_methods' in gene2_dicts[key]]
+            
+            # Update the skipped count
+            skipped_count += len(gene2_dicts) - len(valid_gene2_keys)
+
+            lengths = [gene2_dicts[key]["length"] if "length" in gene2_dicts[key] and gene2_dicts[key]["length"] is not None else -1 for key in valid_gene2_keys]
+            similarities = [gene2_dicts[key]["similarity"] if "similarity" in gene2_dicts[key] and gene2_dicts[key]["similarity"] is not None else -1 for key in valid_gene2_keys]
+
+            prediction_scores = [prediction_score(gene2_dicts[key]) for key in valid_gene2_keys]
+
+            bins = assign_percentage_bins(lengths)
+
+            sorted_gene2_keys = sorted(valid_gene2_keys, key=lambda x: (bins[valid_gene2_keys.index(x)], -similarities[valid_gene2_keys.index(x)], -prediction_scores[valid_gene2_keys.index(x)]))
+
+            # Assigning ranks with shared ranks for identical entries
+            previous_criteria = None
+            previous_rank = 0
+            shared_rank_count = 0
+            for gene2 in sorted_gene2_keys:
+                current_criteria = (bins[valid_gene2_keys.index(gene2)], similarities[valid_gene2_keys.index(gene2)], prediction_scores[valid_gene2_keys.index(gene2)])
+                if current_criteria == previous_criteria:
+                    mini_database[gene1][gene2]["rank"] = previous_rank
+                    shared_rank_count += 1
+                else:
+                    rank = previous_rank + shared_rank_count + 1
+                    mini_database[gene1][gene2]["rank"] = rank
+                    previous_rank = rank
+                    shared_rank_count = 0
+                    previous_criteria = current_criteria
+
+        # Look for test gene with species specific geneid WBGene00001964
+        temp_analysis_dict = {}
+        for gene1 in tqdm(mini_database):
+            if mini_database[gene1]['species_specific_geneid'] == 'DRSC:WBGene00001964':
+                print('Found WBGene00001964')
+                # Pretty print the dictionary.
+                pp = pprint.PrettyPrinter(indent=4)
+                pp.pprint(mini_database[gene1])
+                for j, q in mini_database[gene1].items():
+                    if isinstance(q, dict):
+                        geneid2 = j
+                        temp_analysis_dict[geneid2] = {}
+                        temp_analysis_dict[geneid2]['symbol'] = {mini_database[geneid2]['symbol']}
+                        temp_analysis_dict[geneid2]['rank'] = {q['rank']}
+        pp.pprint(temp_analysis_dict)
+
+        # Print number of skipped entries.
+        print('Skipped {} entries'.format(skipped_count))
+        quit()
 
         print("Dumping pickle file.")
         pickle.dump(mini_database, open("mini_database.p", "wb"))
