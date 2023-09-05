@@ -637,10 +637,22 @@ def main():    # noqa C901
 
                     # Alignment attributes
                     try:
-                        # Round the values to 2 decimal places.
-                        length = round(q['length'], 2)
-                        identity = round(q['identity'], 2)
-                        similarity = round(q['similarity'], 2)
+                        # Only round to two places if the values is not empty.
+                        if q["length"] is not None:
+                            length = round(q['length'], 2)
+                        else:
+                            length = None                        
+                        
+                        if q["identity"] is not None:
+                            identity = round(q['identity'], 2)
+                        else:
+                            identity = None
+
+                        if q["similarity"] is not None:
+                            similarity = round(q['similarity'], 2)
+                        else:
+                            similarity = None
+
                     except KeyError:
                         # print the exception.
                         print("geneid1: %s" % (geneid1))
