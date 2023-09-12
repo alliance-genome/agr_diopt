@@ -545,28 +545,27 @@ def main():    # noqa C901
 
             lengths = [gene2_dicts[key]["length"] if "length" in gene2_dicts[key] and gene2_dicts[key]["length"] is not None else -1 for key in valid_gene2_keys]
             similarities = [gene2_dicts[key]["similarity"] if "similarity" in gene2_dicts[key] and gene2_dicts[key]["similarity"] is not None else -1 for key in valid_gene2_keys]
-
+            identities = [gene2_dicts[key]["identity"] if "identity" in gene2_dicts[key] and gene2_dicts[key]["identity"] is not None else -1 for key in valid_gene2_keys]
+            
             prediction_scores = [prediction_score(gene2_dicts[key]) for key in valid_gene2_keys]
 
             bins = assign_percentage_bins(lengths)
 
-            sorted_gene2_keys = sorted(valid_gene2_keys, key=lambda x: (bins[valid_gene2_keys.index(x)], -similarities[valid_gene2_keys.index(x)], -prediction_scores[valid_gene2_keys.index(x)]))
-
+            sorted_gene2_keys = sorted(valid_gene2_keys, key=lambda x: (bins[valid_gene2_keys.index(x)], -similarities[valid_gene2_keys.index(x)], -identities[valid_gene2_keys.index(x)], -prediction_scores[valid_gene2_keys.index(x)]))
+            
             # Assigning ranks with shared ranks for identical entries
             previous_criteria = None
             previous_rank = 0
-            shared_rank_count = 0
+            processed_count = 0
             for gene2 in sorted_gene2_keys:
-                current_criteria = (bins[valid_gene2_keys.index(gene2)], similarities[valid_gene2_keys.index(gene2)], prediction_scores[valid_gene2_keys.index(gene2)])
+                current_criteria = (bins[valid_gene2_keys.index(gene2)], similarities[valid_gene2_keys.index(gene2)], identities[valid_gene2_keys.index(gene2)], prediction_scores[valid_gene2_keys.index(gene2)])
                 if current_criteria == previous_criteria:
                     mini_database[gene1][gene2]["rank"] = previous_rank
-                    shared_rank_count += 1
                 else:
-                    rank = previous_rank + shared_rank_count + 1
-                    mini_database[gene1][gene2]["rank"] = rank
-                    previous_rank = rank
-                    shared_rank_count = 0
+                    previous_rank += 1
+                    mini_database[gene1][gene2]["rank"] = previous_rank
                     previous_criteria = current_criteria
+                processed_count += 1
 
         # Look for test gene with species specific geneid WBGene00001964
         # temp_analysis_dict = {}
@@ -638,18 +637,27 @@ def main():    # noqa C901
                     # Alignment attributes
                     try:
                         # Only round to two places if the values is not empty.
+                        # Drop the decimal point and anything afterwards.
                         if q["length"] is not None:
                             length = round(q['length'], 2)
+                            # Drop the decimal point and anything afterwards.
+                            length = int(length)
                         else:
                             length = None                        
                         
                         if q["identity"] is not None:
                             identity = round(q['identity'], 2)
+                            # Times by 100 to make a percentage.
+                            identity = identity * 100
+                            identity = int(identity)
                         else:
                             identity = None
 
                         if q["similarity"] is not None:
                             similarity = round(q['similarity'], 2)
+                            # Times by 100 to make a percentage.
+                            similarity = similarity * 100
+                            similarity = int(similarity)
                         else:
                             similarity = None
 
