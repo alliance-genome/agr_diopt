@@ -532,6 +532,50 @@ def main():    # noqa C901
         print('similarity missing: {}'.format(similarity_missing))
         print('score missing: {}'.format(score_missing))
 
+        print('Filtering matches for yeast to include only SGD method matches.')
+        print('Removing any yeast entry that does not have at least an SGD method match.')
+
+        for gene1, gene2_data in tqdm(mini_database.items()):
+            # Check if gene1 is yeast.
+            if mini_database[gene1]['species'] != '4932':
+                continue
+
+            # Create a list to store keys that do not have an SGD match
+            keys_to_remove = []
+
+            # Check each gene2 entry for SGD method match
+            for gene2, data in gene2_data.items():
+                # Ensure it's a dictionary and check for SGD method match
+                if isinstance(data, dict) and 'matched_prediction_methods' in data:
+                    if 'SGD' not in data['matched_prediction_methods']:
+                        keys_to_remove.append(gene2)
+
+            # Remove entries without an SGD match
+            for key in keys_to_remove:
+                del mini_database[gene1][key]
+
+        print('Filtering matches to include only those with two or more matches in matched_prediction_methods.')
+        print('Removing any entry (except yeast) that does not meet this criterion.')
+
+        for gene1, gene2_data in tqdm(mini_database.items()):
+            # Check if gene1 is yeast and skip if true.
+            if mini_database[gene1]['species'] == '4932':
+                continue
+
+            # Create a list to store keys that do not have at least two matches
+            keys_to_remove = []
+
+            # Check each gene2 entry for the number of matches in matched_prediction_methods
+            for gene2, data in gene2_data.items():
+                # Ensure it's a dictionary and check for the number of matches
+                if isinstance(data, dict) and 'matched_prediction_methods' in data:
+                    if len(data['matched_prediction_methods']) < 2:
+                        keys_to_remove.append(gene2)
+
+            # Remove entries with less than two matches
+            for key in keys_to_remove:
+                del mini_database[gene1][key]
+
         print('Assigning ranks to each paralog pair.')
         skipped_count = 0
         for gene1, gene2_data in tqdm(mini_database.items()):
