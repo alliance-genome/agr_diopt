@@ -537,7 +537,7 @@ def main():    # noqa C901
 
         for gene1, gene2_data in tqdm(mini_database.items()):
             # Check if gene1 is yeast.
-            if mini_database[gene1]['species'] != '4932':
+            if mini_database[gene1]['species'] != 4932:
                 continue
 
             # Create a list to store keys that do not have an SGD match
@@ -559,9 +559,9 @@ def main():    # noqa C901
 
         for gene1, gene2_data in tqdm(mini_database.items()):
             # Check if gene1 is yeast and skip if true.
-            if mini_database[gene1]['species'] == '4932':
+            if mini_database[gene1]['species'] == 4932:
                 continue
-
+                
             # Create a list to store keys that do not have at least two matches
             keys_to_remove = []
 
