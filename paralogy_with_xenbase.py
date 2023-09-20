@@ -561,7 +561,7 @@ def main():    # noqa C901
             # Check if gene1 is yeast and skip if true.
             if mini_database[gene1]['species'] == 4932:
                 continue
-                
+            
             # Create a list to store keys that do not have at least two matches
             keys_to_remove = []
 
