@@ -163,29 +163,69 @@ def load_test_set_of_genes():
 
     return test_set_of_genes
 
-def assign_percentage_bins(lengths):
-    if not lengths:  # Check if lengths is empty
-        return []
-    max_length = max(lengths)
-    bin_thresholds = [0.75 * max_length, 0.5 * max_length, 0.25 * max_length]
-    bins = []
-    for length in lengths:
-        if length > bin_thresholds[0]:
-            bins.append(1)
-        elif length > bin_thresholds[1]:
-            bins.append(2)
-        elif length > bin_thresholds[2]:
-            bins.append(3)
-        else:
-            bins.append(4)
-    return bins
 
-def prediction_score(entry):
-    # Calculate the ratio of matched to possible methods
-    ratio = len(entry['matched_prediction_methods']) / (len(entry['possible_prediction_methods']) + 1e-5)  # added a small value to avoid division by zero
-    # Penalty for not_matched methods
-    penalty = len(entry['not_matched_prediction_methods'])
-    return ratio - penalty
+def calculate_score(entry, max_length, avg_length):
+    # Extract necessary data, retaining None values
+    length = entry.get("length")
+    similarity = entry.get("similarity")
+    identity = entry.get("identity")
+    
+    method_count_ratio = len(entry['matched_prediction_methods']) / (len(entry['possible_prediction_methods']) + 1e-5)
+    
+    # Calculate absolute similarity and identity, handling None values appropriately
+    absolute_similarity = (length * (similarity / 100)) if (length is not None and similarity is not None) else None
+    absolute_identity = (length * (identity / 100)) if (length is not None and identity is not None) else None
+    
+    # Calculate alignment length ratio, handling None values appropriately
+    alignment_length_ratio = (length / max_length) if (length is not None and max_length != 0) else None
+    
+    # Apply penalty if alignment length is less than 50% of average length, handling None values appropriately
+    penalty = 0.5 if (length is not None and length < 0.5 * avg_length) else 0
+    
+    # Calculate score using the new formula, handling None values appropriately
+    score_components = [value for value in [(1.000 * absolute_similarity if absolute_similarity is not None else 0), 
+                                            (1.000 * absolute_identity if absolute_identity is not None else 0), 
+                                            1.500 * method_count_ratio, 
+                                            (1.500 * alignment_length_ratio if alignment_length_ratio is not None else 0)] 
+                        if value is not None]
+    score = sum(score_components) - penalty
+    return score
+
+def assign_ranks(database):
+    skipped_count = 0
+    
+    # Calculate the maximum and average alignment lengths across all entries
+    all_lengths = [entry.get("length") for gene1, gene2_data in database.items() for entry in gene2_data.values() if isinstance(entry, dict)]
+    filtered_lengths = [x for x in all_lengths if x is not None]
+    max_length = max(filtered_lengths) if filtered_lengths else 0
+    avg_length = sum(filtered_lengths) / len(filtered_lengths) if filtered_lengths else 0
+
+    for gene1, gene2_data in tqdm(database.items()):
+        gene2_dicts = {key: value for key, value in gene2_data.items() if isinstance(value, dict)}
+        
+        # Filter out gene2 entries missing 'matched_prediction_methods'
+        valid_gene2_keys = [key for key in gene2_dicts if 'matched_prediction_methods' in gene2_dicts[key]]
+        
+        # Update the skipped count
+        skipped_count += len(gene2_dicts) - len(valid_gene2_keys)
+        
+        prediction_scores = [calculate_score(gene2_dicts[key], max_length, avg_length) for key in valid_gene2_keys]
+
+        sorted_gene2_keys = sorted(valid_gene2_keys, key=lambda x: -prediction_scores[valid_gene2_keys.index(x)])
+        
+        # Assigning ranks with shared ranks for identical entries
+        previous_score = None
+        previous_rank = 0
+        for gene2 in sorted_gene2_keys:
+            current_score = prediction_scores[valid_gene2_keys.index(gene2)]
+            if current_score == previous_score:
+                database[gene1][gene2]["rank"] = previous_rank
+            else:
+                previous_rank += 1
+                database[gene1][gene2]["rank"] = previous_rank
+                previous_score = current_score
+
+    print(f"Skipped {skipped_count} entries due to missing 'matched_prediction_methods'.")
 
 def main():    # noqa C901
 
@@ -577,39 +617,7 @@ def main():    # noqa C901
                 del mini_database[gene1][key]
 
         print('Assigning ranks to each paralog pair.')
-        skipped_count = 0
-        for gene1, gene2_data in tqdm(mini_database.items()):
-            gene2_dicts = {key: value for key, value in gene2_data.items() if isinstance(value, dict)}
-
-            # Filter out gene2 entries missing 'matched_prediction_methods'
-            valid_gene2_keys = [key for key in gene2_dicts if 'matched_prediction_methods' in gene2_dicts[key]]
-            
-            # Update the skipped count
-            skipped_count += len(gene2_dicts) - len(valid_gene2_keys)
-
-            lengths = [gene2_dicts[key]["length"] if "length" in gene2_dicts[key] and gene2_dicts[key]["length"] is not None else -1 for key in valid_gene2_keys]
-            similarities = [gene2_dicts[key]["similarity"] if "similarity" in gene2_dicts[key] and gene2_dicts[key]["similarity"] is not None else -1 for key in valid_gene2_keys]
-            identities = [gene2_dicts[key]["identity"] if "identity" in gene2_dicts[key] and gene2_dicts[key]["identity"] is not None else -1 for key in valid_gene2_keys]
-            
-            prediction_scores = [prediction_score(gene2_dicts[key]) for key in valid_gene2_keys]
-
-            bins = assign_percentage_bins(lengths)
-
-            sorted_gene2_keys = sorted(valid_gene2_keys, key=lambda x: (bins[valid_gene2_keys.index(x)], -similarities[valid_gene2_keys.index(x)], -identities[valid_gene2_keys.index(x)], -prediction_scores[valid_gene2_keys.index(x)]))
-            
-            # Assigning ranks with shared ranks for identical entries
-            previous_criteria = None
-            previous_rank = 0
-            processed_count = 0
-            for gene2 in sorted_gene2_keys:
-                current_criteria = (bins[valid_gene2_keys.index(gene2)], similarities[valid_gene2_keys.index(gene2)], identities[valid_gene2_keys.index(gene2)], prediction_scores[valid_gene2_keys.index(gene2)])
-                if current_criteria == previous_criteria:
-                    mini_database[gene1][gene2]["rank"] = previous_rank
-                else:
-                    previous_rank += 1
-                    mini_database[gene1][gene2]["rank"] = previous_rank
-                    previous_criteria = current_criteria
-                processed_count += 1
+        assign_ranks(mini_database)
 
         # Look for test gene with species specific geneid WBGene00001964
         # temp_analysis_dict = {}
@@ -626,9 +634,6 @@ def main():    # noqa C901
         #                 temp_analysis_dict[geneid2]['symbol'] = {mini_database[geneid2]['symbol']}
         #                 temp_analysis_dict[geneid2]['rank'] = {q['rank']}
         # pp.pprint(temp_analysis_dict)
-
-        # Print number of skipped entries.
-        print('Skipped {} entries'.format(skipped_count))
 
         print("Dumping pickle file.")
         pickle.dump(mini_database, open("mini_database.p", "wb"))
