@@ -179,16 +179,13 @@ def calculate_score(entry, max_length, avg_length):
     # Calculate alignment length ratio, handling None values appropriately
     alignment_length_ratio = (length / max_length) if (length is not None and max_length != 0) else None
     
-    # Apply penalty if alignment length is less than 50% of average length, handling None values appropriately
-    penalty = 0.5 if (length is not None and length < 0.5 * avg_length) else 0
-    
     # Calculate score using the new formula, handling None values appropriately
     score_components = [value for value in [(1.000 * absolute_similarity if absolute_similarity is not None else 0), 
                                             (1.000 * absolute_identity if absolute_identity is not None else 0), 
                                             1.500 * method_count_ratio, 
                                             (1.500 * alignment_length_ratio if alignment_length_ratio is not None else 0)] 
                         if value is not None]
-    score = sum(score_components) - penalty
+    score = sum(score_components)
     return score
 
 def assign_ranks(database):
