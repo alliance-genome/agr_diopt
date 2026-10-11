@@ -1,15 +1,38 @@
-# agr-diopt
+# agr_diopt
+
+DIOPT (DRSC Integrative Ortholog Prediction Tool) at the Alliance of Genome Resources.
+This repository holds two independent parts.
+
+| Part | Location | Purpose |
+| --- | --- | --- |
+| Search API and web app (prototype) | `services/diopt-api/`, `web/`, `scripts/` | Researcher-facing ortholog search across species, with per-method evidence |
+| Data pipeline | repository root (`orthology.py`, `paralogy.py`, `ortho_fms_upload.py`, ...) | Processes DIOPT releases into Alliance orthology and paralogy files |
+
+## DIOPT search API and web app
+
+A Rust (Axum, SQLx) API and a React/TypeScript researcher interface for searching DIOPT
+ortholog predictions. Enter genes from one species to list their predicted orthologs in
+another, with the DIOPT score, best-match flags, confidence, and the prediction methods
+that support each pair. Results export as TSV or JSON.
+
+This is a prototype. Its output has not yet been validated against the DRSC DIOPT release.
+
+- Setup, configuration, API reference, and tests: [`services/diopt-api/README.md`](services/diopt-api/README.md)
+- Database tables the app reads: [`docs/schema/`](docs/schema/)
+- Interface design system: [`docs/DESIGN.md`](docs/DESIGN.md)
+
+## Data pipeline
 
 Scripts for updating DIOPT data at the Alliance.
 
-## Instructions for updating DIOPT
+### Instructions for updating DIOPT
 
-### Processing of DIOPT CSV files.
+#### Processing of DIOPT CSV files.
 
 - Claire Hu (claire_hu@genetics.med.harvard.edu) provides a dump of DIOPT data in the form of CSV files, typically once per year. 
 - These files must be inspected for possible formatting errors or issues before being used to load the DIOPT data.
 
-#### Examining and modifying DIOPT CSV files.
+##### Examining and modifying DIOPT CSV files.
 
 - The script `ddl_tsv_to_csv.py` located in the `support_scripts` folder is used to process the DIOPT CSV files from Claire.
 
@@ -40,7 +63,7 @@ Scripts for updating DIOPT data at the Alliance.
     - Modifying the CSV data by editing the data directly _or_ by adding a function in the `ddl_tsv_to_csv.py` script will typically ensure that the downstream scripts function as expected.
     - There's no real easy answer on "how" to fix bad or malformed data, you just need to try and poke around until it's working.
     
-### Obtaining external data not included in the DIOPT CSV files.
+#### Obtaining external data not included in the DIOPT CSV files.
 
 - The DIOPT processing script requires data from NCBI in order to fully load the orthology.
 - These data exist in the form of a downloadable bulk filed called: `All_Data.gene_info.gz`.
@@ -52,26 +75,26 @@ Scripts for updating DIOPT data at the Alliance.
         - Command-line configurations are a TODO. Feel free to update this script and edit this README.md.
     - Run the script once the configuration variables are updated. It will create a new copy of the `All_Data` file with significantly less data for use in the main DIOPT script.
     
-### Running the main DIOPT processing script `rework_diopt2chado.py`.
+#### Running the main DIOPT processing script `rework_diopt2chado.py`.
 
 - This script should **always** be run against a **copy of production** (test database) before using production.
 - This script uses a **tremendous** amount of memory and should be run on a FlyBase desktop machine. It will not run on most laptops or home computers.
 - No Postgres database is required to run this script, everything is handled via CSV files and in-memory.
 - Outstanding improvements and TODOs are listed as issues in this GitHub repo. 
 
-#### Configuring `rework_diopt2chado.py`. 
+##### Configuring `rework_diopt2chado.py`. 
 
 - Verbose / Debug mode can be turned on by using the -v or --verbose flag when executing the script.
 - All other configuration options can be found in `/data/credentials/diopt/config.cfg`.
 - **PLEASE CHECK THE CONFIG FILE BEFORE RUNNING.**
 
-#### Launching `rework_diopt2chado.py`.
+##### Launching `rework_diopt2chado.py`.
 
 - Install all requirements from the requirements.txt file.
 - Execute the script with `python rework_diopt2chado.py`.
 - Verbose mode can be enable with `python rework_diopt2chado.py -v`.
 
-#### Loading bulk CSV data.
+##### Loading bulk CSV data.
 
 - The python script `rework_diopt2chado.py` will also generate 3 bulk CSV files in the DIOPT output directory.
 - These files need to be manually loaded into Chado _after_ changes from `rework_diopt2chado.py` are committed.
@@ -83,11 +106,11 @@ Scripts for updating DIOPT data at the Alliance.
     - `psql -h <flysql> -d <database> -c "\copy dbxrefprop (dbxref_id, type_id, value, rank) FROM 'dbxrefprop_output_file.csv' CSV HEADER;"`
     - Replace <flysql> with the appropriate flysql server and <database> with your test database or production_chado.
     
-#### Drop the previous DIOPT dataset.
+##### Drop the previous DIOPT dataset.
 
 - After all the data is tested, loaded, and confirmed, the old DIOPT dataset can be manually dropped.
 - Use this command when logged into the appropriate database: 
     - `delete from db where name = 'diopt_v6_0';`
 - Replace the name `diopt_v6_0` with the version of DIOPT you'd like to remove.
 
-## Fin!
+### Fin!

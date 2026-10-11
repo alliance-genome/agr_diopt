@@ -1,0 +1,20 @@
+CREATE TABLE `Prediction_Method` (
+  `prediction_method` varchar(64) NOT NULL,
+  `method_label` varchar(64) DEFAULT ' ',
+  `source` varchar(128) DEFAULT NULL,
+  `description` text,
+  `URL` varchar(256) DEFAULT NULL,
+  `version` varchar(64) DEFAULT NULL,
+  `release_date` date DEFAULT NULL,
+  `date_downloaded` date DEFAULT NULL,
+  `type` varchar(16) DEFAULT NULL,
+  `year_published` int(11) DEFAULT NULL,
+  `institute` varchar(256) DEFAULT NULL,
+  `algorithms` text,
+  `coverage` varchar(128) DEFAULT NULL,
+  `PMID` int(11) DEFAULT NULL,
+  `reference` text,
+  `color` char(6) DEFAULT NULL,
+  `weight` float DEFAULT NULL,
+  PRIMARY KEY (`prediction_method`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;

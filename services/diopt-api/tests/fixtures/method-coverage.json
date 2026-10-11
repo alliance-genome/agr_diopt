@@ -1,0 +1,8 @@
+{
+  "dataset_id": "synthetic-fixture-not-biological-results",
+  "generated_at": "2026-10-11T00:00:00+00:00",
+  "pairs": {
+    "10090:9606": ["Wrong species method"],
+    "7227:9606": ["Method A", "Method B", "Method C"]
+  }
+}

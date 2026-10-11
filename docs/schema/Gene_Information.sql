@@ -1,0 +1,20 @@
+CREATE TABLE `Gene_Information` (
+  `geneid` int(11) NOT NULL,
+  `speciesid` int(11) DEFAULT NULL,
+  `symbol` varchar(33) CHARACTER SET latin1 DEFAULT NULL,
+  `symbol_cs` varchar(33) CHARACTER SET latin1 COLLATE latin1_bin DEFAULT NULL,
+  `description` text CHARACTER SET latin1,
+  `locus_tag` varchar(50) CHARACTER SET latin1 DEFAULT NULL,
+  `species_specific_geneid` varchar(100) CHARACTER SET latin1 DEFAULT NULL,
+  `species_specific_geneid_type` varchar(100) CHARACTER SET latin1 DEFAULT NULL,
+  `chromosome` varchar(50) CHARACTER SET latin1 DEFAULT NULL,
+  `map_location` varchar(50) CHARACTER SET latin1 DEFAULT NULL,
+  `gene_type` varchar(50) CHARACTER SET latin1 DEFAULT NULL,
+  `ensembl_geneid` varchar(50) CHARACTER SET latin1 DEFAULT NULL,
+  PRIMARY KEY (`geneid`),
+  KEY `symbol` (`symbol`),
+  KEY `species_symbol` (`speciesid`,`symbol`),
+  KEY `species` (`speciesid`),
+  KEY `species_specific_geneid` (`species_specific_geneid`),
+  KEY `symbol_cs` (`symbol_cs`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;

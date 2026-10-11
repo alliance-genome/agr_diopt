@@ -164,3 +164,26 @@ DIOPT*
 
 # Text files
 *.txt
+
+# DIOPT search API and web app
+.env
+.env.*
+!.env.example
+**/target/
+**/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+test-results/
+*.tsbuildinfo
+*~
+*.bak
+# App files that the generic *.json and *.png rules above would hide
+!web/package.json
+!web/package-lock.json
+!web/tsconfig.json
+!web/public/*.png
+!services/diopt-api/tests/fixtures/*.json
+# The pipeline's DIOPT* rule matches these on case-insensitive filesystems (macOS, Windows)
+!services/diopt-api/
+!scripts/diopt_*.py
