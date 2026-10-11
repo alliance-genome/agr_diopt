@@ -73,7 +73,7 @@ def _ping():
 def main():
     data = diopt_paths.data_dir()
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dataset-id", help="label for the loaded data, e.g. diopt-2026-09-28")
+    ap.add_argument("--dataset-id", help="label for the loaded data, e.g. diopt-YYYY-MM-DD")
     ap.add_argument("--coverage", type=pathlib.Path, default=data / "derived/method-coverage.json")
     ap.add_argument("--web-dir", type=pathlib.Path, default=diopt_paths.REPO / "web/dist")
     ap.add_argument("--replace", action="store_true", help="overwrite an existing api-env.json")

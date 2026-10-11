@@ -102,7 +102,7 @@ test("datasetNote is neutral and independent of private dataset-ID conventions",
     datasetNote("synthetic-fixture-not-biological-results"),
     "Synthetic test data only. These are demonstration records, not biological results.",
   );
-  for (const id of ["drsc-2026-09-28-b3e3", "diopt-2026-09-28"]) {
+  for (const id of ["drsc-example-0000", "diopt-2026-01-01"]) {
     const note = datasetNote(id);
     assert.equal(note, `DIOPT ortholog predictions supplied by DRSC. Dataset ${id}.`);
     assert.doesNotMatch(note, /hand.?off|pending|September/i);

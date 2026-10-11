@@ -47,11 +47,12 @@ Open `http://127.0.0.1:43111`. To recreate the fixture after editing
 ## Real data
 
 1. Start the database: `python3 scripts/start_local_database.py`.
-2. Load a DIOPT MySQL dump containing the tables in [`docs/schema/`](../../docs/schema/)
+2. Create the account and API config, naming the data you are about to load. This also
+   waits until the new database finishes its first-time setup:
+   `python3 scripts/setup_local_api_config.py --dataset-id diopt-YYYY-MM-DD`.
+3. Load a DIOPT MySQL dump containing the tables in [`docs/schema/`](../../docs/schema/)
    into the `diopt` database, for example
    `docker exec -i diopt-prototype-db mariadb --defaults-extra-file=/run/diopt-secrets/root.cnf diopt < dump.sql`.
-3. Create the account and API config, naming the loaded data:
-   `python3 scripts/setup_local_api_config.py --dataset-id diopt-YYYY-MM-DD`.
 4. Precompute method coverage (about a minute on a full dataset):
    `python3 scripts/build_method_coverage.py`. Rerun it after every data refresh. The API
    refuses to start when the coverage file was built for a different dataset.
@@ -59,7 +60,7 @@ Open `http://127.0.0.1:43111`. To recreate the fixture after editing
    `http://127.0.0.1:43100`.
 
 MariaDB listens only on `127.0.0.1:43306`; the API binds loopback. Set `DIOPT_LAN_IP` to a
-private IPv4 address to add a LAN listener for internal previews. This is a research
+private (RFC 1918) IPv4 address to add a LAN listener for internal previews. This is a research
 preview, not an authenticated public deployment. The container is limited to 8 GiB with
 a 6 GiB buffer pool; adjust `scripts/start_local_database.py` on smaller machines. The
 database image is pinned by digest. Credentials are generated into the private directory,
